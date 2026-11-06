@@ -5,7 +5,7 @@ const MAX_SPEC_BYTES = 5 * 1024 * 1024;
 
 export async function resolveInsideRoot(rootInput: string, relativeInput: string): Promise<string> {
   if (path.isAbsolute(relativeInput)) {
-    throw new Error("Use caminhos relativos à raiz do projeto.");
+    throw new Error("Use paths relative to the project root.");
   }
 
   const root = await realpath(rootInput);
@@ -14,7 +14,7 @@ export async function resolveInsideRoot(rootInput: string, relativeInput: string
   const relative = path.relative(root, resolved);
 
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error(`O caminho precisa permanecer dentro da raiz do projeto: ${relativeInput}`);
+    throw new Error(`The path must stay within the project root: ${relativeInput}`);
   }
 
   return resolved;
@@ -28,8 +28,8 @@ export async function resolveProjectRoot(relativeRoot: string): Promise<string> 
 export async function readSpec(root: string, relativePath: string): Promise<{ path: string; content: string }> {
   const filePath = await resolveInsideRoot(root, relativePath);
   const metadata = await stat(filePath);
-  if (!metadata.isFile()) throw new Error(`O contrato não é um arquivo: ${relativePath}`);
-  if (metadata.size > MAX_SPEC_BYTES) throw new Error(`O contrato excede o limite de ${MAX_SPEC_BYTES} bytes.`);
+  if (!metadata.isFile()) throw new Error(`The contract is not a file: ${relativePath}`);
+  if (metadata.size > MAX_SPEC_BYTES) throw new Error(`The contract exceeds the ${MAX_SPEC_BYTES}-byte limit.`);
   return { path: filePath, content: await readFile(filePath, "utf8") };
 }
 

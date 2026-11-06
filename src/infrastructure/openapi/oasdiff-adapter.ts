@@ -20,7 +20,7 @@ function rejectExternalRefs(document: unknown): void {
       visited.add(current);
       for (const [key, value] of Object.entries(current)) {
         if (key === "$ref" && typeof value === "string" && !value.startsWith("#")) {
-          throw new Error(`Referências externas não são aceitas no MVP: ${value}`);
+          throw new Error(`External references are not supported in the MVP: ${value}`);
         }
         pending.push(value);
       }
@@ -33,13 +33,13 @@ function parseContract(content: string, label: string): unknown {
   try {
     document = YAML.parse(content);
   } catch (error) {
-    throw new Error(`${label} não é um YAML/JSON válido: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${label} is not valid YAML/JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!document || typeof document !== "object" || !("openapi" in document)) {
-    throw new Error(`${label} não parece ser uma especificação OpenAPI.`);
+    throw new Error(`${label} does not appear to be an OpenAPI specification.`);
   }
   const version = String((document as { openapi?: unknown }).openapi ?? "");
-  if (!version.startsWith("3.0.")) throw new Error(`${label}: somente OpenAPI 3.0.x é suportado no MVP.`);
+  if (!version.startsWith("3.0.")) throw new Error(`${label}: only OpenAPI 3.0.x is supported in the MVP.`);
   rejectExternalRefs(document);
   return document;
 }
@@ -49,7 +49,7 @@ function normalizeChanges(output: string): ContractChange[] {
   try {
     parsed = JSON.parse(output);
   } catch {
-    throw new Error("O oasdiff retornou uma saída JSON inválida.");
+    throw new Error("oasdiff returned invalid JSON output.");
   }
 
   const changes = Array.isArray(parsed)
@@ -57,22 +57,28 @@ function normalizeChanges(output: string): ContractChange[] {
     : parsed && typeof parsed === "object" && Array.isArray((parsed as { changes?: unknown }).changes)
       ? (parsed as { changes: unknown[] }).changes
       : null;
-  if (!changes) throw new Error("Formato JSON de saída do oasdiff não reconhecido.");
+  if (!changes) throw new Error("Unrecognized oasdiff JSON output format.");
 
   return changes.map((item, index) => {
-    const change = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`Invalid oasdiff change at index ${index}.`);
+    }
+    const change = item as Record<string, unknown>;
+    const severity = change.level === 3 ? "ERR" : change.level === 2 ? "WARN" : null;
+    if (!severity) throw new Error(`Unrecognized oasdiff severity at index ${index}.`);
     const properties = change;
     const methodRaw = String(change.operation ?? change.method ?? change.httpMethod ?? "").toUpperCase();
     const method = METHODS.has(methodRaw as HttpMethod) ? methodRaw as HttpMethod : null;
     const path = typeof change.path === "string" ? change.path : typeof change.endpoint === "string" ? change.endpoint : null;
-    // Every item came from `oasdiff breaking`, so it is a breaking finding.
-    const breaking = true;
+    // ERR findings are definite breaks; WARN findings are potential breaks.
+    const breaking = severity === "ERR";
 
     return {
       id: String(change.id ?? change.code ?? change.ruleId ?? `change-${index + 1}`),
       operation: { method, path },
       breaking,
-      description: String(change.text ?? change.description ?? change.message ?? "Alteração identificada pelo oasdiff."),
+      severity,
+      description: String(change.text ?? change.description ?? change.message ?? "Change identified by oasdiff."),
       ...(typeof change.category === "string" ? { category: change.category } : {}),
       properties,
     };
@@ -93,14 +99,14 @@ export async function compareContracts(base: { path: string; content: string }, 
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { stderr?: string; stdout?: string; killed?: boolean; code?: string | number };
     if (failure.code === "ENOENT") {
-      throw new Error("oasdiff não foi encontrado. Instale o binário oficial e disponibilize-o no PATH.");
+      throw new Error("oasdiff was not found. Install the official binary and make it available on PATH.");
     }
-    if (failure.killed) throw new Error(`oasdiff excedeu o limite de ${TIMEOUT_MS / 1000} segundos.`);
+    if (failure.killed) throw new Error(`oasdiff exceeded the ${TIMEOUT_MS / 1000}-second time limit.`);
     if (failure.stdout?.trim()) {
       stdout = failure.stdout;
     } else {
-    const details = failure.stderr?.trim();
-    throw new Error(details ? `oasdiff falhou: ${details}` : `oasdiff falhou: ${failure.message}`);
+      const details = failure.stderr?.trim();
+      throw new Error(details ? `oasdiff failed: ${details}` : `oasdiff failed: ${failure.message}`);
     }
   }
 

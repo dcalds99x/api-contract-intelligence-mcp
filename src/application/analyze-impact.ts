@@ -16,8 +16,8 @@ export async function analyzeImpact(input: {
     readSpec(root, input.headSpec),
   ]);
   const changes = await compareContracts(base, head);
-  const consumers = findEndpointConsumers({ projectRoot: root, ...(input.tsconfig ? { tsconfig: input.tsconfig } : {}) });
-  const impacts = changes.filter((change) => change.breaking).map((change) => {
+  const consumers = await findEndpointConsumers({ projectRoot: root, ...(input.tsconfig ? { tsconfig: input.tsconfig } : {}) });
+  const impacts = changes.map((change) => {
     if (!change.operation.method || !change.operation.path) {
       return { change, consumerImpact: "not_analyzed" as const, references: [] };
     }
@@ -35,10 +35,10 @@ export async function analyzeImpact(input: {
     impacts,
     unmatchedBreakingChanges: impacts.filter((impact) => impact.consumerImpact !== "confirmed_usage").map((impact) => impact.change),
     limitations: [
-      "A análise de consumidores cobre chamadas diretas com método e path estáticos em clients criados por openapi-fetch.",
-      "Wrappers, aliases complexos, caminhos dinâmicos e clientes HTTP diferentes não são rastreados.",
-      "Uso confirmado de uma operação não confirma que o consumidor está incompatível; propriedades e fluxo de dados não são analisados.",
-      "Mudanças sem método/path reconhecíveis permanecem no relatório, mas não podem ser correlacionadas a consumidores.",
+      "Consumer analysis covers direct calls with a static method and path on clients created by openapi-fetch.",
+      "Wrappers, complex aliases, dynamic paths, and other HTTP clients are not tracked.",
+      "Confirmed usage of an operation does not confirm that a consumer is incompatible; properties and data flow are not analyzed.",
+      "Changes without a recognizable method/path remain in the report but cannot be correlated with consumers.",
     ],
   };
 }

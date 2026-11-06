@@ -1,45 +1,45 @@
 # API Contract Intelligence MCP
 
-MCP local para relacionar alterações incompatíveis em contratos OpenAPI com chamadas TypeScript diretas feitas por `openapi-fetch`. O projeto está em v0.1: a análise aponta evidências verificáveis e declara limites; ela não afirma que encontrou todo consumidor nem que uma chamada encontrada está quebrada.
+A local MCP server that connects breaking changes in OpenAPI contracts to direct TypeScript calls made with `openapi-fetch`. The project is at v0.1: its analysis reports verifiable evidence and states its limitations. It does not claim to find every consumer or to prove that a detected call is broken.
 
-## Requisitos
+## Requirements
 
-- Node.js 20.11 ou superior
-- `oasdiff` instalado e disponível no `PATH`
+- Node.js 20.11 or later
+- `oasdiff` installed and available on `PATH`
 
-Instale o binário oficial do [oasdiff](https://github.com/oasdiff/oasdiff#installation) para o seu sistema. O servidor nunca baixa ou executa uma instalação sob demanda.
+Install the official [oasdiff binary](https://github.com/oasdiff/oasdiff#installation) for your operating system. The server never downloads or runs an on-demand installation.
 
-## Desenvolvimento
+## Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-Para compilar: `npm run build`, depois execute `npm start`.
+To build the project, run `npm run build`, then run `npm start`.
 
-## Ferramentas MCP
+## MCP Tools
 
-- `analyze_contract_changes`: compara `baseSpec` e `headSpec` e normaliza alterações breaking.
-- `find_endpoint_consumers`: encontra consumidores para um `method` + `path`.
-- `analyze_change_impact`: combina as duas análises e inclui limitações explícitas.
+- `analyze_contract_changes`: compares `baseSpec` and `headSpec` and normalizes breaking changes.
+- `find_endpoint_consumers`: finds consumers for a `method` + `path` pair.
+- `analyze_change_impact`: combines both analyses and reports their limitations.
 
-Todas recebem `projectRoot` (padrão `.`); os caminhos dos contratos e o `tsconfig` são relativos a essa raiz. Por segurança, a raiz precisa ficar dentro do diretório de trabalho do processo, ou de `API_CONTRACT_ROOT` se definido. Caminhos absolutos, caminhos fora da raiz e `$ref` externos são rejeitados. Referências internas `#/...` são aceitas. Contratos acima de 5 MiB, projetos acima de 10.000 arquivos TS e comparações acima de 30 segundos são recusados/encerrados.
+All tools accept `projectRoot` (defaults to `.`); contract paths and `tsconfig` are relative to this root. For security, the root must stay inside the process working directory, or inside `API_CONTRACT_ROOT` when set. Absolute paths, paths outside the root, and external `$ref` references are rejected. Internal `#/...` references are allowed. Contracts larger than 5 MiB, projects with more than 10,000 TypeScript files, and comparisons that exceed 30 seconds are rejected or terminated.
 
-O indexador reconhece chamadas literais como `client.GET("/users/{id}", ...)` quando `client` é criado por `createClient` importado de `openapi-fetch`. Wrappers, URLs dinâmicas, uso de propriedade da resposta e outros clientes não são rastreados.
+The indexer recognizes literal calls such as `client.GET("/users/{id}", ...)` when `client` is created by the default or named `createClient` import from `openapi-fetch`. Wrappers, dynamic URLs, response property usage, and other clients are not tracked. Contract changes include their `ERR` or `WARN` severity as reported by `oasdiff`.
 
-## Configuração MCP (exemplo)
+## MCP Configuration Example
 
-No Codex, adicione um servidor stdio em Settings → MCP servers, ou inclua no `~/.codex/config.toml`:
+In Codex, add a stdio server in Settings → MCP servers, or add this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.api_contract_intelligence]
 command = "node"
-args = ["C:/caminho/para/Contract API - MCP/dist/index.js"]
-cwd = "C:/caminho/para/Contract API - MCP"
+args = ["C:/path/to/Contract API - MCP/dist/index.js"]
+cwd = "C:/path/to/Contract API - MCP"
 
 [mcp_servers.api_contract_intelligence.env]
-API_CONTRACT_ROOT = "C:/caminho/para/Contract API - MCP"
+API_CONTRACT_ROOT = "C:/path/to/Contract API - MCP"
 ```
 
-Compile o projeto com `npm run build` antes de conectar. Em desenvolvimento, use `npx tsx src/index.ts`. O protocolo usa stdio; logs da aplicação devem ir para stderr, nunca stdout.
+Build the project with `npm run build` before connecting. During development, use `npx tsx src/index.ts`. The protocol uses stdio; application logs must go to stderr, never stdout.

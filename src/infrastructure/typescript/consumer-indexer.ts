@@ -1,9 +1,12 @@
 import path from "node:path";
+import { realpath } from "node:fs/promises";
+import ts from "typescript";
 import { Project, SyntaxKind } from "ts-morph";
 import type { ConsumerReference, HttpMethod } from "../../domain/types.js";
 
 const MAX_FILES = 10_000;
 const METHODS = new Set<HttpMethod>(["GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"]);
+const EXCLUDED_DIRECTORIES = ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/coverage/**"];
 
 export type ConsumerScope = { projectRoot: string; tsconfig?: string };
 
@@ -13,30 +16,59 @@ function getStringArgument(node: import("ts-morph").CallExpression): string | un
   return expression.getLiteralValue();
 }
 
-export function findEndpointConsumers(scope: ConsumerScope, operation?: { method: HttpMethod; path: string }): ConsumerReference[] {
-  const projectRoot = path.resolve(scope.projectRoot);
-  const project = scope.tsconfig
-    ? new Project({ tsConfigFilePath: path.resolve(projectRoot, scope.tsconfig), skipAddingFilesFromTsConfig: false })
-    : new Project({ skipAddingFilesFromTsConfig: true });
+function isInsideRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
 
-  if (!scope.tsconfig) {
-    project.addSourceFilesAtPaths([
-      path.join(projectRoot, "**/*.ts"),
-      path.join(projectRoot, "**/*.tsx"),
-      `!${path.join(projectRoot, "**/node_modules/**")}`,
-      `!${path.join(projectRoot, "**/dist/**")}`,
-      `!${path.join(projectRoot, "**/*.d.ts")}`,
-    ]);
+function getConfiguredSourceFiles(projectRoot: string, tsconfig: string): string[] {
+  const configPath = path.resolve(projectRoot, tsconfig);
+  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (configFile.error) {
+    throw new Error(ts.flattenDiagnosticMessageText(configFile.error.messageText, "\n"));
   }
 
+  const parsedConfig = ts.parseJsonConfigFileContent(
+    configFile.config,
+    ts.sys,
+    path.dirname(configPath),
+    undefined,
+    configPath,
+  );
+  if (parsedConfig.errors.length) {
+    throw new Error(ts.flattenDiagnosticMessageText(parsedConfig.errors[0]!.messageText, "\n"));
+  }
+
+  return parsedConfig.fileNames.filter((filePath) => /\.tsx?$/i.test(filePath) && !/\.d\.ts$/i.test(filePath));
+}
+
+export async function findEndpointConsumers(scope: ConsumerScope, operation?: { method: HttpMethod; path: string }): Promise<ConsumerReference[]> {
+  const projectRoot = path.resolve(scope.projectRoot);
+  const sourcePaths = scope.tsconfig
+    ? getConfiguredSourceFiles(projectRoot, scope.tsconfig)
+    : ts.sys.readDirectory(projectRoot, [".ts", ".tsx"], EXCLUDED_DIRECTORIES, ["**/*.ts", "**/*.tsx"])
+      .filter((filePath) => !/\.d\.ts$/i.test(filePath));
+
+  if (sourcePaths.length > MAX_FILES) throw new Error(`Project exceeds the limit of ${MAX_FILES} TypeScript files.`);
+
+  const resolvedPaths = await Promise.all(sourcePaths.map((filePath) => realpath(filePath)));
+  if (resolvedPaths.some((filePath) => !isInsideRoot(projectRoot, filePath))) {
+    throw new Error("Source files must stay within the project root.");
+  }
+
+  const project = scope.tsconfig
+    ? new Project({ tsConfigFilePath: path.resolve(projectRoot, scope.tsconfig), skipAddingFilesFromTsConfig: true })
+    : new Project({ skipAddingFilesFromTsConfig: true });
+  project.addSourceFilesAtPaths(resolvedPaths);
   const sourceFiles = project.getSourceFiles();
-  if (sourceFiles.length > MAX_FILES) throw new Error(`Projeto excede o limite de ${MAX_FILES} arquivos TypeScript.`);
 
   const references: ConsumerReference[] = [];
   for (const sourceFile of sourceFiles) {
     const factoryNames = new Set<string>();
     for (const declaration of sourceFile.getImportDeclarations()) {
       if (declaration.getModuleSpecifierValue() !== "openapi-fetch") continue;
+      const defaultImport = declaration.getDefaultImport();
+      if (defaultImport) factoryNames.add(defaultImport.getText());
       const named = declaration.getNamedImports().find((item) => item.getName() === "createClient");
       if (named) factoryNames.add(named.getAliasNode()?.getText() ?? named.getName());
     }

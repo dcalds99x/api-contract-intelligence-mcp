@@ -12,6 +12,7 @@ export type ContractChange = {
   id: string;
   operation: { method: HttpMethod | null; path: string | null };
   breaking: boolean;
+  severity: "ERR" | "WARN";
   description: string;
   category?: string;
   properties?: Record<string, unknown>;
